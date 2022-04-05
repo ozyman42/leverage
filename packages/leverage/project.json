@@ -1,0 +1,73 @@
+{
+  "root": "packages/leverage",
+  "sourceRoot": "packages/leverage/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "@nrwl/web:webpack",
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "compiler": "babel",
+        "outputPath": "dist/packages/leverage",
+        "index": "packages/leverage/src/index.html",
+        "baseHref": "/",
+        "main": "packages/leverage/src/main.tsx",
+        "polyfills": "packages/leverage/src/polyfills.ts",
+        "tsConfig": "packages/leverage/tsconfig.app.json",
+        "assets": [
+          "packages/leverage/src/favicon.ico",
+          "packages/leverage/src/assets"
+        ],
+        "styles": [],
+        "scripts": [],
+        "webpackConfig": "@nrwl/react/plugins/webpack"
+      },
+      "configurations": {
+        "production": {
+          "fileReplacements": [
+            {
+              "replace": "packages/leverage/src/environments/environment.ts",
+              "with": "packages/leverage/src/environments/environment.prod.ts"
+            }
+          ],
+          "optimization": true,
+          "outputHashing": "all",
+          "sourceMap": false,
+          "namedChunks": false,
+          "extractLicenses": true,
+          "vendorChunk": false
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nrwl/web:dev-server",
+      "options": {
+        "buildTarget": "leverage:build",
+        "hmr": true
+      },
+      "configurations": {
+        "production": {
+          "buildTarget": "leverage:build:production",
+          "hmr": false
+        }
+      }
+    },
+    "lint": {
+      "executor": "@nrwl/linter:eslint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["packages/leverage/**/*.{ts,tsx,js,jsx}"]
+      }
+    },
+    "test": {
+      "executor": "@nrwl/jest:jest",
+      "outputs": ["coverage/packages/leverage"],
+      "options": {
+        "jestConfig": "packages/leverage/jest.config.js",
+        "passWithNoTests": true
+      }
+    }
+  },
+  "tags": []
+}
