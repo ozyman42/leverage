@@ -6,6 +6,7 @@ import { LeverageCalculator } from './leverage-calculator';
 const StyledApp = styled.div`
   th {
     background: orange;
+    width: 100px;
   }
   th, td {
     padding: 10px;

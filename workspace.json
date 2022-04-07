@@ -1,7 +1,6 @@
 {
   "version": 2,
   "projects": {
-    "leverage": "packages/leverage",
-    "leverage-e2e": "packages/leverage-e2e"
+    "leverage": "packages/leverage"
   }
 }

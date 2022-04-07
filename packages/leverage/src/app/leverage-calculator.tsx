@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
 
+enum UpdateableFields {
+    StartEquity = 'Start Equity',
+    EntryPrice = 'Entry Price',
+    StopPrice = 'Stop Price',
+    IdealExitPrice = 'Ideal Exit',
+    Size = 'Size',
+}
+
 type Trade = {
-    startEquity: number;
-    entryPrice: number;
-    exitPrice: number;
-    size: number;
-    direction: Direction;
-    mangoLiquidationPrice?: number;
+    [UpdateableFields.StartEquity]: number;
+    [UpdateableFields.EntryPrice]: number;
+    [UpdateableFields.StopPrice]: number;
+    [UpdateableFields.IdealExitPrice]: number;
+    [UpdateableFields.Size]: number;
+    started?: number;
+    finished?: number;
 }
 
 enum Direction {
@@ -19,28 +28,36 @@ function dec2(input: number): number {
 }
 
 function setIfNumeric(value: string, setter: (input: string) => void) {
-    const num = parseFloat(value);
-    if (value === "" || (!isNaN(num) && !isNaN(value as any))) {
+    if (value === "" || isNumeric(value)) {
         setter(value);
     }
 }
 
+function isNumeric(value: string) {
+    const num = parseFloat(value);
+    return (!isNaN(num) && !isNaN(value as any));
+}
+
+// Features:
+// 1. set entry
+// 2. set exit
+// 3. set stop
+// 4. set max loss
+// 5. set start equity
+// 6. calc end equity, calc size, calc leverage
+// 7. mark as in-progess and completed
+// 8. mango liquidation
+
 const localstoragekey = "leverage-calculator";
+type TradeInputs = {[f in UpdateableFields]: string};
+const initFields: TradeInputs = Object.fromEntries(Object.values(UpdateableFields).map(f => [f, ""])) as TradeInputs
 
 export const LeverageCalculator: React.FC = () => {
     const [trades, setTrades] = useState<Trade[]>(JSON.parse(window.localStorage.getItem(localstoragekey) ?? "[]"));
-    const [startEquity, setStartEquity] = useState("");
-    const [entryPrice, setEntryPrice] = useState("");
-    const [exitPrice, setExitPrice] = useState("");
-    const [size, setSize] = useState("");
-    const [direction, setDirection] = useState<Direction>(Direction.long);
-    const [mangoLiquidationPrice, setMangoLiquidationPrice] = useState("");
+    const [inputs, setInputs] = useState<TradeInputs>(initFields);
+    const [editing, setEditing] = useState<number>(-1);
     function clear() {
-        setStartEquity("");
-        setEntryPrice("");
-        setExitPrice("");
-        setSize("");
-        setMangoLiquidationPrice("");
+        setInputs(initFields);
     }
     function saveTrades(newTrades: Trade[]) {
         setTrades(newTrades);
@@ -49,16 +66,8 @@ export const LeverageCalculator: React.FC = () => {
     function addTrade() {
         if (!active()) return;
         const newTrades = [...trades];
-        newTrades.push({
-            startEquity: parseFloat(startEquity),
-            entryPrice: parseFloat(entryPrice),
-            exitPrice: parseFloat(exitPrice),
-            size: parseFloat(size),
-            direction,
-            mangoLiquidationPrice: mangoLiquidationPrice.length ? parseFloat(mangoLiquidationPrice) : undefined
-        });
+        newTrades.push(Object.fromEntries(Object.entries(inputs).map(([field, value]) => [field, parseFloat(value)])) as {[f in UpdateableFields]: number});
         saveTrades(newTrades);
-        setDirection(direction === Direction.long ? Direction.short : Direction.long);
         clear();
     }
     function deleteTrade(index: number) {
@@ -72,6 +81,7 @@ export const LeverageCalculator: React.FC = () => {
             const temp = newTrades[index - 1];
             newTrades[index - 1] = newTrades[index];
             newTrades[index] = temp;
+            setEditing(editing - 1);
             saveTrades(newTrades);
         }
     }
@@ -81,99 +91,110 @@ export const LeverageCalculator: React.FC = () => {
             const temp = newTrades[index + 1];
             newTrades[index + 1] = newTrades[index];
             newTrades[index] = temp;
+            setEditing(editing + 1);
             saveTrades(newTrades);
         }
     }
     function active() {
-        return startEquity.length > 0 && entryPrice.length > 0 && exitPrice.length > 0 && size.length > 0;
+        return Object.values(inputs).filter(val => val.length === 0).length === 0;
     }
     function oneActive() {
-        return startEquity.length > 0 || entryPrice.length > 0 || exitPrice.length > 0 || size.length > 0 || mangoLiquidationPrice.length > 0
+        return Object.values(inputs).filter(val => val.length > 0).length > 0;
     }
     return (
         <div>
             <table>
                 <tbody>
                     <tr>
-                        <th>Start Equity</th>
-                        <th>Entry Price</th>
-                        <th>Exit Price</th>
-                        <th>Size</th>
+                        <td>
+                            <input type="button" value="Clear Trades" onClick={() => { saveTrades([]); }} />
+                        </td>
+                        {Object.values(UpdateableFields).map(field =>
+                            <th key={field}>{field}</th>
+                        )}
                         <th>Direction</th>
                         <th>Start Leverage</th>
-                        <th>End Leverage</th>
-                        <th>End Equity</th>
-                        <th>Theoretical Liq. Price</th>
-                        <th>Mango Liq. Price</th>
-                        <th>Profit {'&'} Loss</th>
-                        <th>Change %</th>
+                        <th>Ideal Exit Leverage</th>
+                        <th>Stop Leverage</th>
+                        <th>Ideal Exit Equity</th>
+                        <th>Stop Equity</th>
+                        <th>Ideal Profit</th>
+                        <th>Stop Loss</th>
+                        <th>Theoretical Liq Price</th>
+                        <th>Mango Spot Liq Price</th>
+                        <th>Mango Perp Liq Price</th>
                     </tr>
                     {trades.map((trade, index) => {
-                        const { startEquity, entryPrice, exitPrice, size, direction, mangoLiquidationPrice } = trade;
-                        const startLev = (size * entryPrice) / startEquity;
-                        const endEquity = direction === Direction.long ? 
-                            (size * exitPrice) - (size * entryPrice) + startEquity
-                            :
-                            (size * entryPrice) - (size * exitPrice) + startEquity
-                        ;
-                        const endLev = (size * exitPrice) / endEquity;
+                        const entry = trade['Entry Price'];
+                        const stop = trade['Stop Price'];
+                        const startEquity = trade['Start Equity'];
+                        const size = trade['Size'];
+                        const idealExit = trade['Ideal Exit'];
+                        const direction = entry < stop ? Direction.short : Direction.long;
+                        function getEquity(end: number) {
+                            return direction === Direction.long ?
+                                size * (end - entry) + startEquity
+                                :
+                                size * (entry - end) + startEquity;
+                        }
+                        const endEquity = getEquity(idealExit);
+                        const equityAtStop = getEquity(stop);
+                        const startLev = (size * entry) / startEquity;
+                        const endLev = (size * idealExit) / endEquity;
+                        const stopLev = (size * stop) / equityAtStop;
                         const liqPrice = direction === Direction.long ?
-                            ((size * entryPrice) - startEquity) / size
+                            entry - (startEquity / size)
                             :
-                            ((size * entryPrice) + startEquity) / size
+                            entry + (startEquity / size)
                         ;
                         const profitLoss = endEquity - startEquity;
                         const change = profitLoss / startEquity;
+                        const stopLoss = equityAtStop - startEquity;
+                        const maxLoss = (startEquity - equityAtStop) / startEquity * 100;
                         function updateTrade(newTrade: Trade) {
                             const newTrades = [...trades];
                             newTrades[index] = newTrade;
                             saveTrades(newTrades);
                         }
+                        const beingEdited = index === editing;
                         return (
-                            <tr key={index}>
-                                <Updateable trade={trade} onChange={updateTrade} k="startEquity" />
-                                <Updateable trade={trade} onChange={updateTrade} k="entryPrice" />
-                                <Updateable trade={trade} onChange={updateTrade} k="exitPrice" />
-                                <Updateable trade={trade} onChange={updateTrade} k="size" />
-                                <th>
-                                    {direction}
-                                    <Spacer />
-                                    <button onClick={() => {
-                                        const newTrade = {...trade};
-                                        newTrade.direction = trade.direction === Direction.long ? Direction.short : Direction.long;
-                                        updateTrade(newTrade);
-                                    }}>✎</button>
-                                </th>
+                            <tr key={index} style={beingEdited ? {backgroundColor: 'lightblue'} : {}}>
+                                <td>
+                                    {beingEdited ?
+                                        <input type="button" value="☑" onClick={() => { setEditing(-1); }}/>
+                                        :
+                                        <input type="button" value="✎" onClick={() => { setEditing(index); }} />
+                                    }
+                                </td>
+                                {Object.values(UpdateableFields).map(field =>
+                                    <Updateable trade={trade} onChange={updateTrade} k={field} key={field} editing={beingEdited} />
+                                )}
+                                <th>{direction}</th>
                                 <td>{dec2(startLev)}</td>
                                 <td>{dec2(endLev)}</td>
+                                <td>{dec2(stopLev)}</td>
                                 <td>{dec2(endEquity)}</td>
+                                <td>{dec2(equityAtStop)}</td>
+                                <td>{dec2(profitLoss)}<br />({dec2(change * 100)}%)</td>
+                                <td>{dec2(stopLoss)}<br />({-dec2(maxLoss)}%)</td>
                                 <td>{dec2(liqPrice)}</td>
-                                <Updateable trade={trade} onChange={updateTrade} k="mangoLiquidationPrice" />
-                                <td>{dec2(profitLoss)}</td>
-                                <td>{Math.round(dec2(change) * 100)}%</td>
-                                <td><button onClick={() => { deleteTrade(index) }}>X</button></td>
-                                <td><button onClick={() => { up(index) }}><span role="img" aria-label='up'>⇧</span></button></td>
-                                <td><button onClick={() => { down(index) }}><span role="img" aria-label='down'>⇩</span></button></td>
+                                <td>Coming soon</td>
+                                <td>Coming soon</td>
+                                {beingEdited && <>
+                                    <td><button onClick={() => { deleteTrade(index) }}>X</button></td>
+                                    <td><button onClick={() => { up(index) }}><span role="img" aria-label='up'>⇧</span></button></td>
+                                    <td><button onClick={() => { down(index) }}><span role="img" aria-label='down'>⇩</span></button></td>
+                                </>}
                             </tr>
                         );
                     })}
                     <tr>
-                        <td><input type="text" value={startEquity} onChange={e => { setIfNumeric(e.target.value, setStartEquity); }} /></td>
-                        <td><input type="text" value={entryPrice} onChange={e => { setIfNumeric(e.target.value, setEntryPrice); }} /></td>
-                        <td><input type="text" value={exitPrice} onChange={e => { setIfNumeric(e.target.value, setExitPrice); }} /></td>
-                        <td><input type="text" value={size} onChange={e => { setIfNumeric(e.target.value, setSize); }} /></td>
                         <td>
-                            <select onChange={e => { setDirection(e.target.value as Direction) }}>
-                                {Object.values(Direction).map((direction) => <option value={direction} key={direction}>
-                                    {direction}
-                                </option>)}
-                            </select>
+                            {oneActive() && <input type="button" value="Clear" onClick={() => {clear()}} />}
+                            {active() && <input type="submit" value="Add" onClick={() => {addTrade()}} style={{marginLeft: 5}} />}
                         </td>
-                        <td>{active() && <input type="button" value="Add" onClick={() => {addTrade()}} />}</td>
-                        <td>{oneActive() && <input type="button" value="Clear" onClick={() => {clear()}} />}</td>
-                        <td></td>
-                        <td></td>
-                        <td><input type="text" value={mangoLiquidationPrice} onChange={e => { setIfNumeric(e.target.value, setMangoLiquidationPrice); }} /></td>
+                        {Object.values(UpdateableFields).map(field => <FormField key={field} onChange={val => { setInputs({...inputs, [field]: val }) }} value={inputs[field]} />)}
+                        <th>{ (isNumeric(inputs['Entry Price']) && isNumeric(inputs['Stop Price'])) ? parseFloat(inputs['Entry Price']) > parseFloat(inputs['Stop Price']) ? Direction.long : Direction.short : "--" }</th>
                     </tr>
                 </tbody>
             </table>
@@ -181,29 +202,38 @@ export const LeverageCalculator: React.FC = () => {
     )
 }
 
-const Spacer: React.FC = () => <span style={{width: 10, display: 'inline-block'}}></span>;
+const FormField: React.FC<{value: string; onChange: (s: string) => void}> = ({onChange, value}) => {
+    return (
+        <td>
+            <input type="number" value={value} style={{width: INPUT_WIDTH}} onChange={e => { setIfNumeric(e.target.value, v => { onChange(v); }); }} />
+        </td>
+    )
+}
 
-const Updateable: React.FC<{trade: Trade; k: keyof Trade; onChange: (newTrade: Trade) => void}> = ({trade, k, onChange}) => {
-    const [updating, setUpdating] = useState(false);
-    const [curUpdateVal, setCurUpdateVal] = useState("");
-    const curVal: number = trade[k] as any;
-    function send() {
-        if (curUpdateVal.length > 0) {
+const INPUT_WIDTH = 95;
+const PRICE_STEP_SIZE = .3;
+const STEP_SIZES: {[f in UpdateableFields]: number} = {
+    [UpdateableFields.StartEquity]: 10,
+    [UpdateableFields.EntryPrice]: PRICE_STEP_SIZE,
+    [UpdateableFields.StopPrice]: PRICE_STEP_SIZE,
+    [UpdateableFields.IdealExitPrice]: PRICE_STEP_SIZE,
+    [UpdateableFields.Size]: 5
+}
+
+const Updateable: React.FC<{trade: Trade; k: UpdateableFields; onChange: (newTrade: Trade) => void; editing: boolean}> = ({trade, k, onChange, editing}) => {
+    function send(v: string) {
+        if (v.length > 0) {
             const newTrade = {...trade};
-            (newTrade as any)[k] = parseFloat(curUpdateVal);
+            (newTrade as any)[k] = parseFloat(v);
             onChange(newTrade);
         }
     }
     return (
         <td>
-            {curVal ? dec2(curVal) : "N/A"}
-            <Spacer />
-            {updating && <form>
-                <input type="text" onChange={e => { setIfNumeric(e.target.value, setCurUpdateVal); }} style={{width: 50}} value={curUpdateVal} />
-                {curUpdateVal.length > 0 && <input type="submit" onClick={() => { send(); setCurUpdateVal(""); setUpdating(false); }} value="☑" />}
-                <button onClick={() => { setCurUpdateVal(""); setUpdating(false); }}>☒</button>
+            {editing && <form>
+                <input type="number" onChange={e => { setIfNumeric(e.target.value, send); }} style={{width: INPUT_WIDTH}} value={trade[k]} step={STEP_SIZES[k]} />
             </form>}
-            {!updating && <button onClick={() => { setUpdating(true); }}>✎</button>}
+            {!editing && trade[k]}
         </td>
     )
 }
