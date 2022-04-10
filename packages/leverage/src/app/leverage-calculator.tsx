@@ -78,6 +78,15 @@ export const LeverageCalculator: React.FC = () => {
             setEditing(-1);
         }
     }
+    function duplicateTrade(index: number) {
+        const newTrades = [...trades];
+        const newTrade = {...trades[index]};
+        newTrades.splice(index, 0, newTrade);
+        saveTrades(newTrades);
+        if (editing > index) {
+            setEditing(editing + 1);
+        }
+    }
     function up(index: number) {
         if (index > 0 && trades.length > 1) {
             const newTrades = [...trades];
@@ -191,6 +200,7 @@ export const LeverageCalculator: React.FC = () => {
                                 <td>{dec2(liqPrice)}</td>
                                 <td>{dec2(mangoLiqPrice)}</td>
                                 <td><button onClick={() => { deleteTrade(index) }}>X</button></td>
+                                <td><button onClick={() => { duplicateTrade(index) }}>❐</button></td>
                                 {beingEdited && <>                                   
                                     <td><button onClick={() => { up(index) }}><span role="img" aria-label='up'>⇧</span></button></td>
                                     <td><button onClick={() => { down(index) }}><span role="img" aria-label='down'>⇩</span></button></td>
