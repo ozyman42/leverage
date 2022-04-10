@@ -74,6 +74,9 @@ export const LeverageCalculator: React.FC = () => {
         const newTrades = [...trades];
         newTrades.splice(index, 1);
         saveTrades(newTrades);
+        if (editing === index) {
+            setEditing(-1);
+        }
     }
     function up(index: number) {
         if (index > 0 && trades.length > 1) {
@@ -121,8 +124,7 @@ export const LeverageCalculator: React.FC = () => {
                         <th>Ideal Profit</th>
                         <th>Stop Loss</th>
                         <th>Theoretical Liq Price</th>
-                        <th>Mango Spot Liq Price</th>
-                        <th>Mango Perp Liq Price</th>
+                        <th>Mango Liq Price</th>
                     </tr>
                     {trades.map((trade, index) => {
                         const entry = trade['Entry Price'];
@@ -157,6 +159,15 @@ export const LeverageCalculator: React.FC = () => {
                             saveTrades(newTrades);
                         }
                         const beingEdited = index === editing;
+
+                        // Mango start
+                        //   TODO: maintenance leverage is 40x for SOL, BTC, and ETH perps but smaller for other perps and operates by a different mechanism for spot (seemingly).
+                        //         fix this by adding a trading platform input and an asset market.
+                        const liquidationLeverage = 40;
+                        const equityDirection = direction === Direction.long ? -1 : 1;
+                        const mangoLiqPrice = ((equityDirection * liquidationLeverage * entry * size) + (liquidationLeverage * startEquity)) / (size + (liquidationLeverage * size * equityDirection));
+                        // Mango end
+
                         return (
                             <tr key={index} style={beingEdited ? {backgroundColor: 'lightblue'} : {}}>
                                 <td>
@@ -178,10 +189,9 @@ export const LeverageCalculator: React.FC = () => {
                                 <td>{dec2(profitLoss)}<br />({dec2(change * 100)}%)</td>
                                 <td>{dec2(stopLoss)}<br />({-dec2(maxLoss)}%)</td>
                                 <td>{dec2(liqPrice)}</td>
-                                <td>Coming soon</td>
-                                <td>Coming soon</td>
-                                {beingEdited && <>
-                                    <td><button onClick={() => { deleteTrade(index) }}>X</button></td>
+                                <td>{dec2(mangoLiqPrice)}</td>
+                                <td><button onClick={() => { deleteTrade(index) }}>X</button></td>
+                                {beingEdited && <>                                   
                                     <td><button onClick={() => { up(index) }}><span role="img" aria-label='up'>⇧</span></button></td>
                                     <td><button onClick={() => { down(index) }}><span role="img" aria-label='down'>⇩</span></button></td>
                                 </>}
