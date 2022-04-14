@@ -4,12 +4,19 @@ import { Route, Link } from 'react-router-dom';
 import { LeverageCalculator } from './leverage-calculator';
 
 const StyledApp = styled.div`
+  table {
+    border-collapse: collapse;
+  }
   th {
     background: orange;
-    width: 100px;
+    width: 70px;
   }
   th, td {
-    padding: 10px;
+    padding: 5px;
+    border-left: 1px dotted black;
+  }
+  tr {
+    border-top: 1px solid black
   }
 `;
 

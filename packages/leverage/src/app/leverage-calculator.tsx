@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import TimezoneSelect, { ITimezoneOption } from 'react-timezone-select';
 
 enum UpdateableFields {
     StartEquity = 'Start Equity',
@@ -15,7 +16,10 @@ type Trade = {
     [UpdateableFields.IdealExitPrice]: number;
     [UpdateableFields.Size]: number;
     started?: number;
-    finished?: number;
+    finished?: {
+        at: number;
+        stopped: boolean;
+    }
 }
 
 enum Direction {
@@ -64,7 +68,10 @@ function getStats(trade: Trade) {
     const profitLoss = endEquity - startEquity;
     const change = profitLoss / startEquity;
     const stopLoss = equityAtStop - startEquity;
-    const maxLoss = (startEquity - equityAtStop) / startEquity * 100;
+    const maxLoss = stopLoss / startEquity;
+    const percentMoveToIdeal = (idealExit - entry) / entry;
+    const percentMoveToStop = (stop - entry) / entry;
+    const riskToReward = Math.abs(change / maxLoss);
     
     // Mango start
     //   TODO: maintenance leverage is 40x for SOL, BTC, and ETH perps but smaller for other perps and operates by a different mechanism for spot (seemingly).
@@ -74,7 +81,9 @@ function getStats(trade: Trade) {
     const mangoLiqPrice = ((equityDirection * liquidationLeverage * entry * size) + (liquidationLeverage * startEquity)) / (size + (liquidationLeverage * size * equityDirection));
     // Mango end
     
-    return {entry, stop, startEquity, size, idealExit, direction, endEquity, equityAtStop, startLev, endLev, stopLev, liqPrice, change, stopLoss, maxLoss, mangoLiqPrice, profitLoss};
+    return {entry, stop, startEquity, size, idealExit, direction, endEquity, equityAtStop, startLev, endLev, stopLev, liqPrice, change, stopLoss, maxLoss, mangoLiqPrice, profitLoss, percentMoveToStop, percentMoveToIdeal, riskToReward,
+        started: trade.started, ended: trade.finished
+    };
 }
 
 // Features:
@@ -90,63 +99,172 @@ function getStats(trade: Trade) {
 const localstoragekey = "leverage-calculator";
 type TradeInputs = {[f in UpdateableFields]: string};
 const initFields: TradeInputs = Object.fromEntries(Object.values(UpdateableFields).map(f => [f, ""])) as TradeInputs
+const defaultName = "My Trades";
+const defaultTimeZone = 'America/Los_Angeles';
+const initState: AppState = {stagingGround: [], active: [], name: defaultName, timezone: defaultTimeZone};
+
+type AppState = {
+    stagingGround: Trade[];
+    active: Trade[];
+    name: string;
+    timezone: string;
+}
+
+type PriorAppState = {
+    stagingGround: Trade[];
+    active: Trade[];
+    name: string;
+}
+
+type OldAppState = PriorAppState;
+type NewAppState = AppState;
+function migrate(old: OldAppState): NewAppState {
+    return {
+        ...old,
+        timezone: defaultTimeZone
+    };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-empty-function
+const noop = () => {};
+
+const tzNameToOption = (name: string): ITimezoneOption => {
+    return {
+        value: name,
+        label: ""
+    };
+}
 
 export const LeverageCalculator: React.FC = () => {
-    const [trades, setTrades] = useState<Trade[]>(JSON.parse(window.localStorage.getItem(localstoragekey) ?? "[]"));
+    const [trades, setTrades] = useState<AppState>(JSON.parse(window.localStorage.getItem(localstoragekey) ?? JSON.stringify(initState)));
     const [inputs, setInputs] = useState<TradeInputs>(initFields);
     const [editing, setEditing] = useState<number>(-1);
+    const [editingActive, setEditingActive] = useState(false);
+    const [statsForPastTradesWindow, setStatsForPastTradesWindow] = useState(-1);
+    const [name, setName] = useState(defaultName);
+    const [timezone, setTimeZone] = useState<ITimezoneOption>(tzNameToOption(defaultTimeZone));
+    useEffect(() => {
+        window.document.title = `Leverage | ${trades.name}`;
+        setName(trades.name);
+        return noop;
+    }, [trades.name]);
+    useEffect(() => {
+        setTimeZone(tzNameToOption(trades.timezone));
+        return noop;
+    }, [trades.timezone]);
     function clear() {
         setInputs(initFields);
     }
-    function saveTrades(newTrades: Trade[]) {
-        setTrades(newTrades);
-        window.localStorage.setItem(localstoragekey, JSON.stringify(newTrades));
+    function reset() {
+        saveTrades(initState);
+    }
+    (window as any).reset = reset;
+    function migrateNow() {
+        const old = JSON.parse(window.localStorage.getItem(localstoragekey) ?? "");
+        saveTrades(migrate(old));
+    }
+    (window as any).migrateNow = migrateNow;
+    function upload() {
+        const input = document.createElement("input");
+        input.type = 'file';
+        input.onchange = () => {
+            const reader = new FileReader();
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            reader.readAsText(input.files![0]);
+            reader.onload = (e) => {
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+                saveTrades(JSON.parse(e.target!.result as string));
+                input.remove();
+            }
+        }
+        input.click();
+    }
+    (window as any).upload = upload;
+    function download() {
+        const current = JSON.parse(window.localStorage.getItem(localstoragekey) ?? "");
+        const link = document.createElement("a");
+        const now = new Date();
+        const dateDisplay = now.toLocaleString('en-us', {timeZone: trades.timezone, timeZoneName: 'short'}).split(", ").join("_").split(":").join("-").split(" ").join("_").split("/").join("-");
+        link.download = `leverage-${trades.name}-${dateDisplay}.json`;
+        const blob = new Blob([JSON.stringify(current, null, 4)], {type: "application/json"});
+        const url = URL.createObjectURL(blob);
+        link.href = url;
+        link.click();
+        link.remove();
+    }
+    (window as any).download = download;
+    function saveTrades(newState: AppState) {
+        setTrades(newState);
+        window.localStorage.setItem(localstoragekey, JSON.stringify(newState));
     }
     function inputsToTrade(): Trade {
         return Object.fromEntries(Object.entries(inputs).map(([field, value]) => [field, parseFloat(value)])) as {[f in UpdateableFields]: number};
     }
     function addTrade() {
         if (!active()) return;
-        const newTrades = [...trades];
-        newTrades.push(inputsToTrade());
-        saveTrades(newTrades);
+        const newStagingTrades = [...trades.stagingGround];
+        newStagingTrades.push(inputsToTrade());
+        saveTrades({...trades, stagingGround: newStagingTrades});
         clear();
     }
+    function startTrade(index: number) {
+        if (index >= trades.stagingGround.length || index < 0) return;
+        const newStagingTrades = [...trades.stagingGround];
+        const [removed] = newStagingTrades.splice(index, 1);
+        const newActiveTrade = {...removed};
+        newActiveTrade.started = Date.now();
+        const newActiveTrades = [...trades.active];
+        newActiveTrades.splice(0, 0, newActiveTrade);
+        saveTrades({...trades, active: newActiveTrades, stagingGround: newStagingTrades});
+    }
+    function endTrade(index: number, stopped: boolean) {
+        if (index >= trades.active.length || index < 0) return;
+        const newActiveTrades = [...trades.active];
+        const newTrade = {...newActiveTrades[index]};
+        newTrade.finished = {
+            at: Date.now(),
+            stopped
+        };
+        newActiveTrades[index] = newTrade;
+        saveTrades({...trades, active: newActiveTrades});
+    }
     function deleteTrade(index: number) {
-        const newTrades = [...trades];
-        newTrades.splice(index, 1);
-        saveTrades(newTrades);
+        const newStagingTrades = [...trades.stagingGround];
+        newStagingTrades.splice(index, 1);
+        saveTrades({...trades, stagingGround: newStagingTrades});
         if (editing === index) {
             setEditing(-1);
         }
     }
     function duplicateTrade(index: number) {
-        const newTrades = [...trades];
-        const newTrade = {...trades[index]};
-        newTrades.splice(index, 0, newTrade);
-        saveTrades(newTrades);
+        const newStagingTrades = [...trades.stagingGround];
+        const newTrade = {...newStagingTrades[index]};
+        newStagingTrades.splice(index, 0, newTrade);
+        saveTrades({...trades, stagingGround: newStagingTrades});
         if (editing > index) {
             setEditing(editing + 1);
         }
     }
     function up(index: number) {
-        if (index > 0 && trades.length > 1) {
-            const newTrades = [...trades];
+        const stagingTrades = trades.stagingGround;
+        if (index > 0 && stagingTrades.length > 1) {
+            const newTrades = [...stagingTrades];
             const temp = newTrades[index - 1];
             newTrades[index - 1] = newTrades[index];
             newTrades[index] = temp;
             setEditing(editing - 1);
-            saveTrades(newTrades);
+            saveTrades({...trades, stagingGround: newTrades});
         }
     }
     function down(index: number) {
-        if (index < trades.length - 1 && trades.length > 1) {
-            const newTrades = [...trades];
+        const stagingTrades = trades.stagingGround;
+        if (index < stagingTrades.length - 1 && stagingTrades.length > 1) {
+            const newTrades = [...stagingTrades];
             const temp = newTrades[index + 1];
             newTrades[index + 1] = newTrades[index];
             newTrades[index] = temp;
             setEditing(editing + 1);
-            saveTrades(newTrades);
+            saveTrades({...trades, stagingGround: newTrades});
         }
     }
     function active() {
@@ -155,35 +273,86 @@ export const LeverageCalculator: React.FC = () => {
     function oneActive() {
         return Object.values(inputs).filter(val => val.length > 0).length > 0;
     }
+    function updateTrade(newTrade: Trade, index: number, active: boolean) {
+        if (active) {
+            const newTrades = [...trades.active];
+            newTrades[index] = newTrade;
+            saveTrades({...trades, active: newTrades});
+        } else {
+            const newTrades = [...trades.stagingGround];
+            newTrades[index] = newTrade;
+            saveTrades({...trades, stagingGround: newTrades});
+        }
+    }
+    function getOverallStats() {
+        const active = trades.active;
+        let wins = 0;
+        let losses = 0;
+        let totalPercentChange = 0;
+        let totalObserved = 0;
+        const windowSize = 
+            statsForPastTradesWindow === -1 ? active.length :
+            statsForPastTradesWindow;
+        for (let i = 0; i < windowSize && i < active.length; ++i) {
+            const trade = active[i];
+            if (!trade.finished) continue;
+            const stats = getStats(trade);
+            totalObserved++;
+            if (trade.finished.stopped) {
+                losses++;
+                totalPercentChange += stats.maxLoss;
+            } else {
+                wins++;
+                totalPercentChange += stats.change;
+            }
+        }
+        return { wins, losses, totalPercentChange, totalObserved };
+    }
+    const overallStats = getOverallStats();
     return (
         <div>
             <table>
                 <tbody>
                     <tr>
+                        <th>
+                            Update Name:
+                        </th>
                         <td>
-                            <input type="button" value="Clear Trades" onClick={() => { saveTrades([]); }} />
+                            <input type="text" value={name} onChange={e => { setName(e.target.value); }} />
                         </td>
-                        {Object.values(UpdateableFields).map(field =>
-                            <th key={field}>{field}</th>
-                        )}
-                        <th>Direction</th>
-                        <th>Start Leverage</th>
-                        <th>Ideal Exit Leverage</th>
-                        <th>Stop Leverage</th>
-                        <th>Ideal Exit Equity</th>
-                        <th>Stop Equity</th>
-                        <th>Ideal Profit</th>
-                        <th>Stop Loss</th>
-                        <th>Theoretical Liq Price</th>
-                        <th>Mango Liq Price</th>
+                        <td>
+                            {name.length > 0 && trades.name !== name && 
+                                <input type="button" value="Rename" onClick={() => { saveTrades({...trades, name}); }} />
+                            }
+                        </td>
+                        <td colSpan={5}>
+                            <TimezoneSelect value={timezone} onChange={setTimeZone} />
+                        </td>
+                        <td>
+                            {timezone.value !== trades.timezone &&
+                                <input type="button" value="Update TZ" onClick={() => { saveTrades({...trades, timezone: timezone.value}); }} />
+                            }
+                        </td>
                     </tr>
-                    {trades.map((trade, index) => {
-                        function updateTrade(newTrade: Trade) {
-                            const newTrades = [...trades];
-                            newTrades[index] = newTrade;
-                            saveTrades(newTrades);
-                        }
-                        const beingEdited = index === editing;
+                    <tr>
+                        <th colSpan={20}>
+                            Staging Ground
+                        </th>
+                    </tr>
+                    <tr>
+                        <td>
+                            <input type="button" value="Clear Trades" onClick={() => { reset(); }} />
+                            <br />
+                            <input type="button" value="Migrate" onClick={() => { migrateNow(); }} />
+                            <br />
+                            <input type="button" value="Download" onClick={() => { download(); }} />
+                            <br />
+                            <input type="button" value="Upload" onClick={() => { upload(); }} />
+                        </td>
+                        <ColumnHeaders displayTimes={false} />
+                    </tr>
+                    {trades.stagingGround.map((trade, index) => {
+                        const beingEdited = index === editing && !editingActive;
                         const stats = getStats(trade);
                         return (
                             <tr key={index} style={beingEdited ? {backgroundColor: 'lightblue'} : {}}>
@@ -191,20 +360,27 @@ export const LeverageCalculator: React.FC = () => {
                                     {beingEdited ?
                                         <input type="button" value="☑" onClick={() => { setEditing(-1); }}/>
                                         :
-                                        <input type="button" value="✎" onClick={() => { setEditing(index); }} />
+                                        <input type="button" value="✎" onClick={() => { setEditing(index); setEditingActive(false); }} />
                                     }
                                 </td>
                                 {Object.values(UpdateableFields).map(field =>
-                                    <Updateable trade={trade} onChange={updateTrade} k={field} key={field} editing={beingEdited} />
+                                    <Updateable trade={trade} onChange={trade => { updateTrade(trade, index, false); }} k={field} key={field} editing={beingEdited} />
                                 )}
                                 <th>{stats.direction}</th>
-                                <StatsDisplay stats={stats} />
-                                <td><button onClick={() => { deleteTrade(index) }}>X</button></td>
-                                <td><button onClick={() => { duplicateTrade(index) }}>❐</button></td>
-                                {beingEdited && <>                                   
-                                    <td><button onClick={() => { up(index) }}><span role="img" aria-label='up'>⇧</span></button></td>
-                                    <td><button onClick={() => { down(index) }}><span role="img" aria-label='down'>⇩</span></button></td>
-                                </>}
+                                <StatsDisplay stats={stats} tz={trades.timezone} />
+                                <td style={{width: 120}}>
+                                    <button onClick={() => { deleteTrade(index) }}>X</button>
+                                    <Spacer />
+                                    <button onClick={() => { startTrade(index) }}>Start</button>
+                                    <Spacer />
+                                    <button onClick={() => { duplicateTrade(index) }}>❐</button>
+                                    {beingEdited && <>
+                                        <br />
+                                        <button onClick={() => { up(index) }}><span role="img" aria-label='up'>⇧</span></button>
+                                        <Spacer />
+                                        <button onClick={() => { down(index) }}><span role="img" aria-label='down'>⇩</span></button>
+                                    </>}
+                                </td>
                             </tr>
                         );
                     })}
@@ -215,24 +391,124 @@ export const LeverageCalculator: React.FC = () => {
                         </td>
                         {Object.values(UpdateableFields).map(field => <FormField key={field} onChange={val => { setInputs({...inputs, [field]: val }) }} value={inputs[field]} />)}
                         <th>{ (isNumeric(inputs['Entry Price']) && isNumeric(inputs['Stop Price'])) ? parseFloat(inputs['Entry Price']) > parseFloat(inputs['Stop Price']) ? Direction.long : Direction.short : "--" }</th>
-                        {active() && <StatsDisplay stats={getStats(inputsToTrade())} />}
+                        {active() && <StatsDisplay stats={getStats(inputsToTrade())} tz={trades.timezone} />}
                     </tr>
+                    <tr>
+                        <th colSpan={22}>
+                            Real Trades
+                        </th>
+                    </tr>
+                    <tr>
+                        <td>
+                            Stats for latest: <br />
+                            <select value={statsForPastTradesWindow} onChange={e => {setStatsForPastTradesWindow(parseInt(e.target.value))}}>
+                                <option value={-1}>All</option>
+                                <option value={5}>5</option>
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+                        </td>
+                        <td colSpan={21} style={overallStats.totalPercentChange !== 0 ? {backgroundColor: overallStats.totalPercentChange < 0 ? 'lightsalmon' : 'lightgreen'} : {}}>
+                            {overallStats.totalObserved > 0 && <>
+                                <span>
+                                    For the past <b>{overallStats.totalObserved}</b> trades:
+                                </span>
+                                <Spacer />
+                                <span>
+                                    <b>{overallStats.wins}</b> wins ({dec2(overallStats.wins / overallStats.totalObserved * 100)}%)
+                                </span>
+                                <Spacer />
+                                <span>
+                                    <b>{overallStats.losses}</b> losses ({dec2(overallStats.losses / overallStats.totalObserved * 100)}%)
+                                </span>
+                                <Spacer />
+                                <span>
+                                    with a <b>{dec2(overallStats.totalPercentChange / overallStats.totalObserved * 100)}%</b> change on average
+                                </span>
+                            </>}
+                            {overallStats.totalObserved === 0 && <>Stats will show here once real trades are executed and closed</>}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <ColumnHeaders displayTimes={true} />
+                    </tr>
+                    {trades.active.map((trade, index) => {
+                        const beingEdited = index === editing && editingActive;
+                        const stats = getStats(trade);
+                        return (
+                            <tr key={index} style={beingEdited ? {backgroundColor: 'lightblue'} : stats.ended !== undefined ? {backgroundColor: stats.ended.stopped ? 'lightsalmon' : 'lightgreen'}: {}}>
+                                <td>
+                                    {beingEdited ?
+                                        <input type="button" value="☑" onClick={() => { setEditing(-1); }}/>
+                                        :
+                                        <input type="button" value="✎" onClick={() => { setEditing(index); setEditingActive(true); }} />
+                                    }
+                                </td>
+                                {Object.values(UpdateableFields).map(field =>
+                                    <Updateable trade={trade} onChange={trade => { updateTrade(trade, index, true); }} k={field} key={field} editing={beingEdited} />
+                                )}
+                                <th>{stats.direction}</th>
+                                <StatsDisplay stats={stats} tz={trades.timezone} />
+                                {stats.ended === undefined && <td><button onClick={() => { endTrade(index, false) }}>End @ Ideal</button></td>}
+                                {stats.ended === undefined && <td><button onClick={() => { endTrade(index, true) }}>End @ Stop</button></td>}
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
         </div>
     )
 }
 
-const StatsDisplay: React.FC<{stats: ReturnType<typeof getStats>}> = ({stats}) => <>
+const ColumnHeaders: React.FC<{displayTimes: boolean}>  = ({displayTimes}) => <>
+    {Object.values(UpdateableFields).map(field =>
+        <th key={field}>{field}</th>
+    )}
+    <th>Direction</th>
+    <th>Start Leverage</th>
+    <th>Ideal Exit Leverage</th>
+    <th>Stop Leverage</th>
+    <th>Ideal Exit Equity</th>
+    <th>Stop Equity</th>
+    <th>Ideal Profit</th>
+    <th>Stop Loss</th>
+    <th>% Move to Ideal</th>
+    <th>% Move to Stop</th>
+    <th>Risk to Reward Ratio</th>
+    <th>Theoretical Liq Price</th>
+    <th>Mango Perp Liq Price</th>
+    <th>Mango Spot Liq Price</th>
+    {displayTimes && <>
+        <th>Opened At</th>
+        <th>Closed At</th>
+    </>}
+</>;
+
+function dateDisplay(d: Date, tz: string): string {
+    return d.toLocaleString('en-US', { timeZone: tz, timeZoneName: 'short' })
+}
+
+const StatsDisplay: React.FC<{stats: ReturnType<typeof getStats>, tz: string}> = ({stats, tz}) => <>
     <td>{dec2(stats.startLev)}</td>
     <td>{dec2(stats.endLev)}</td>
     <td>{dec2(stats.stopLev)}</td>
     <td>{dec2(stats.endEquity)}</td>
     <td>{dec2(stats.equityAtStop)}</td>
     <td>{dec2(stats.profitLoss)}<br />({dec2(stats.change * 100)}%)</td>
-    <td>{dec2(stats.stopLoss)}<br />({-dec2(stats.maxLoss)}%)</td>
+    <td>{dec2(stats.stopLoss)}<br />({dec2(stats.maxLoss * 100)}%)</td>
+    <td>{dec2(stats.percentMoveToIdeal * 100)}%</td>
+    <td>{dec2(stats.percentMoveToStop * 100)}%</td>
+    <td>{dec2(stats.riskToReward)}:1</td>
     <td>{dec2(stats.liqPrice)}</td>
     <td>{dec2(stats.mangoLiqPrice)}</td>
+    <td>Coming soon...</td>
+    {stats.started && <>
+        <td style={{width: 120}}>{dateDisplay(new Date(stats.started), tz)}</td>
+        <td style={{width: 120}}>{stats.ended ? dateDisplay(new Date(stats.ended.at), tz) : "N/A"}</td>
+    </>}
 </>
 
 const FormField: React.FC<{value: string; onChange: (s: string) => void}> = ({onChange, value}) => {
@@ -243,7 +519,9 @@ const FormField: React.FC<{value: string; onChange: (s: string) => void}> = ({on
     )
 }
 
-const INPUT_WIDTH = 95;
+const Spacer: React.FC = () => <span style={{display: 'inline-block', width: 2}}></span>
+
+const INPUT_WIDTH = 78;
 const PRICE_STEP_SIZE = .3;
 const STEP_SIZES: {[f in UpdateableFields]: number} = {
     [UpdateableFields.StartEquity]: 10,
