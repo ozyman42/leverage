@@ -14,9 +14,10 @@ const StyledApp = styled.div`
   th, td {
     padding: 5px;
     border-left: 1px dotted black;
+    border-top: 1px solid black;
   }
   tr {
-    border-top: 1px solid black
+    
   }
 `;
 
