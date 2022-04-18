@@ -26,7 +26,7 @@ function setIfNumeric(value: string, setter: (input: string) => void) {
 
 function isNumeric(value: string) {
     const num = parseFloat(value);
-    return (!isNaN(num) && !isNaN(value as any));
+    return (!isNaN(num) && !isNaN(value as unknown as number));
 }
 
 function getStats(trade: Trade) {
@@ -144,6 +144,10 @@ const tzNameToOption = (name: string): ITimezoneOption => {
     };
 }
 
+function addToWindow<A extends string, B>(obj: Record<A, B>) {
+    Object.entries(obj).forEach(([a, b]) => { (window as unknown as Record<string, unknown>)[a] = b })
+}
+
 export const LeverageCalculator: React.FC = () => {
     const [trades, setTrades] = useState<AppState>(JSON.parse(window.localStorage.getItem(localstoragekey) ?? JSON.stringify(initState)));
     const [inputs, setInputs] = useState<TradeInputs>(initFields);
@@ -170,12 +174,12 @@ export const LeverageCalculator: React.FC = () => {
     function reset() {
         saveTrades(initState);
     }
-    (window as any).reset = reset;
+    addToWindow({reset});
     function migrateNow() {
         const old = JSON.parse(window.localStorage.getItem(localstoragekey) ?? "");
         saveTrades(migrate(old));
     }
-    (window as any).migrateNow = migrateNow;
+    addToWindow({migrateNow});
     function upload() {
         const input = document.createElement("input");
         input.type = 'file';
@@ -191,7 +195,7 @@ export const LeverageCalculator: React.FC = () => {
         }
         input.click();
     }
-    (window as any).upload = upload;
+    addToWindow({upload});
     function download() {
         const current = JSON.parse(window.localStorage.getItem(localstoragekey) ?? "");
         const link = document.createElement("a");
@@ -204,7 +208,7 @@ export const LeverageCalculator: React.FC = () => {
         link.click();
         link.remove();
     }
-    (window as any).download = download;
+    addToWindow({download});
     function saveTrades(newState: AppState) {
         setTrades(newState);
         window.localStorage.setItem(localstoragekey, JSON.stringify(newState));
@@ -519,7 +523,7 @@ export const LeverageCalculator: React.FC = () => {
                                 <td style={realTradesSummaryCSS}>
                                     <b>{dec2(overallStats.netChangeByEquity * 100)}%</b><br />net change by equity
                                 </td>
-                                <td style={realTradesSummaryCSS} colSpan={12}></td>
+                                <td style={realTradesSummaryCSS} colSpan={11}></td>
                             </>}
                         {overallStats.totalObserved === 0 && <td colSpan={21}>Stats will show here once real trades are executed and closed</td>}
                     </tr>
@@ -639,7 +643,7 @@ const Updateable: React.FC<{trade: Trade; k: UpdateableFields; onChange: (newTra
     function send(v: string) {
         if (v.length > 0) {
             const newTrade = {...trade};
-            (newTrade as any)[k] = parseFloat(v);
+            newTrade[k] = parseFloat(v);
             onChange(newTrade);
         }
     }
