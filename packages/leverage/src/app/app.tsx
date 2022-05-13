@@ -26,6 +26,7 @@ const StyledApp = styled.div`
 export function App() {
   return (
     <StyledApp>
+      
       <Route
         path="/"
         exact

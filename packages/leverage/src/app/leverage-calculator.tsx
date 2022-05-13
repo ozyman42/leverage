@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TimezoneSelect, { ITimezoneOption } from 'react-timezone-select';
+import { ByBit } from './bybit';
+import { CostToRemake } from './remake-cost';
 
 enum UpdateableFields {
     StartEquity = 'Start Equity',
@@ -159,6 +161,11 @@ export const LeverageCalculator: React.FC = () => {
     const [newPortfolioName, setNewPortfolioName] = useState("");
     const [changingPortfolioName, setChangingPortfolioName] = useState(false);
     const [creatingNewPortfolio, setCreatingNewPortfolio] = useState(false);
+
+    const [calculatingForTop, setCalculatingForTop] = useState(false);
+    const [theoreticalReversal, setTheoresticalReversal] = useState("");
+    const [ladderEquity, setLadderEquity] = useState("");
+
     useEffect(() => {
         window.document.title = `Leverage | ${trades.name}`;
         setName(trades.name);
@@ -379,6 +386,7 @@ export const LeverageCalculator: React.FC = () => {
     const realTradesSummaryCSS: React.CSSProperties = overallStats.totalPercentChange !== 0 ? {backgroundColor: overallStats.netChangeByEquity < 0 ? 'lightsalmon' : 'lightgreen'} : {};
     return (
         <div>
+            <ByBit />
             <table>
                 <tbody>
                     <tr>
@@ -400,6 +408,29 @@ export const LeverageCalculator: React.FC = () => {
                             {timezone.value !== trades.timezone &&
                                 <input type="button" value="Update TZ" onClick={() => { saveTrades({...trades, timezone: timezone.value}); }} />
                             }
+                        </td>
+                        {/*<td colSpan={2}>
+                            Reversal Price:<br />
+                            <input type="number" value={theoreticalReversal} onChange={e => { setIfNumeric(e.target.value, setTheoresticalReversal); }} />
+                        </td>
+                        <td colSpan={2}>
+                            Equity When Laddering:<br />
+                            <input type="number" value={ladderEquity} onChange={e => { setIfNumeric(e.target.value, setLadderEquity); }} />
+                        </td>
+                        <td>
+                            Reversal Type: <br />
+                            <select value={"" + calculatingForTop} onChange={e => { setCalculatingForTop(e.target.value === 'top') }}>
+                                <option value='top'>
+                                    Top
+                                </option>
+                                <option value='bottom'>
+                                    Bottom
+                                </option>
+                            </select>
+                        </td>*/}
+                        <td colSpan={8}>
+                            <CostToRemake />
+                            {/*theoreticalReversal.length > 0 && <Ladders isBottom={!calculatingForTop} price={parseFloat(theoreticalReversal)} equity={parseFloat(ladderEquity)} />*/} 
                         </td>
                     </tr>
                     <tr>
@@ -570,6 +601,43 @@ export const LeverageCalculator: React.FC = () => {
         </div>
     )
 }
+
+type Entry = {
+    percentOffBasisPoints: number;
+    weightBasisPoints: number;
+}
+
+const LADDER_ENTRIES: Entry[] = [
+    {
+        percentOffBasisPoints: -50,
+        weightBasisPoints: 50
+    },
+    {
+        percentOffBasisPoints: 50,
+        weightBasisPoints: 50
+    }
+]
+
+/*
+const Ladders: React.FC<{isBottom: boolean; price: number; equity: number;}> = ({isBottom, price, equity}) => {
+    let accumulatedWeight = 0;
+
+    const firstEntry = isBottom ? 1.005 * price : .995 * price;
+    const secondEntry = isBottom ? .996 * price : 1.004 * price;
+    const reversalNoun = isBottom ? "bottom" : "top";
+    const maxLossBasisPoints = 900;
+    const maxMoveFromFromPriceBasisPoints = 300;
+    const direction = isBottom ? "long" : "short";
+    const equityAtStop = equity * (1 - (maxLossBasisPoints / 100));
+    
+    
+    return (
+        <>
+            Enter {} {direction} at {firstEntry} (0.5% before {reversalNoun})and {} {direction} at {secondEntry} (0.4% after {reversalNoun}) with a stop at {} ({}% after {reversalNoun}) to at most lose {maxLoss * 100}%
+        </>
+    )
+}
+*/
 
 const ColumnHeaders: React.FC<{displayTimes: boolean}>  = ({displayTimes}) => <>
     {Object.values(UpdateableFields).map(field =>
