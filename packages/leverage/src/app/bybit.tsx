@@ -1,7 +1,7 @@
 import * as React from 'react';
 import * as crypto from 'crypto-js';
 
-const ENDPOINT = "https://api.bybit.com";
+const ENDPOINT = "https://leverage-orpin.vercel.app/bybit"; //"https://api.bybit.com";
 
 export const ByBit: React.FC = () => {
     const [apiKey, setApiKey] = React.useState("");
@@ -10,7 +10,7 @@ export const ByBit: React.FC = () => {
 
     async function fetchPositionData(key: string, secret: string) {
         const serverTimeResponse = await fetch(
-            `https://api.bybit.com/v2/public/time`, 
+            `${ENDPOINT}/v2/public/time`, 
             {mode: 'no-cors'}
         );
         console.log("response done");

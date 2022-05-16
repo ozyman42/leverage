@@ -11,15 +11,25 @@ function isNumeric(value: string) {
     return (!isNaN(num) && !isNaN(value as unknown as number));
 }
 
+function hundredths(num: number) {
+    return Math.round(num * 100) / 100;
+}
+
 export const CostToRemake: React.FC = () => {
     const [lose, setLose] = React.useState("10");
+    const [gain, setGain] = React.useState("40");
     const loseAsNum = parseInt(lose);
-    const capitalAfter = (100 - loseAsNum) / 100;
-    const remakeNeeded = Math.round((((1 / capitalAfter) * 100) - 100) * 100) / 100;
+    const capitalAfterLoss = (100 - loseAsNum) / 100;
+    const remakeNeeded = hundredths(((1 / capitalAfterLoss) * 100) - 100);
+    const gainAsNum = parseInt(gain);
+    const capitalAfterGain = (100 + gainAsNum) / 100;
+    const winRatio = Math.log(1 / capitalAfterGain) / Math.log(capitalAfterLoss);
+    const winRate = hundredths(100 * 1 / winRatio);
     return <>
         If you lose &nbsp;
         <input type="number" min={1} max={99} step={1} width={50} value={lose} onChange={e => { setIfNumeric(e.target.value, setLose) }} />%
         then you need a {remakeNeeded}% gain to return to break-even<br />
-        This requires a risk to reward ratio of 
+        Assuming an average profit of <input type="number" style={{width: 50}} min={1} step={1} value={gain} onChange={e => { setIfNumeric(e.target.value, setGain); }} />% you would need to win {winRate}% of the time
+        <br />({hundredths(winRatio)}:1 losses per win ratio) to break even.
     </>
 }

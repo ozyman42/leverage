@@ -1,0 +1,8 @@
+{
+    "rewrites": [
+      {
+        "source": "/bybit/(.*)",
+        "destination": "https://api.bybit.com/$1"
+      }
+    ]
+  }

@@ -428,7 +428,7 @@ export const LeverageCalculator: React.FC = () => {
                                 </option>
                             </select>
                         </td>*/}
-                        <td colSpan={8}>
+                        <td colSpan={11}>
                             <CostToRemake />
                             {/*theoreticalReversal.length > 0 && <Ladders isBottom={!calculatingForTop} price={parseFloat(theoreticalReversal)} equity={parseFloat(ladderEquity)} />*/} 
                         </td>
