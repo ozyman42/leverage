@@ -2,19 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TimezoneSelect, { ITimezoneOption } from 'react-timezone-select';
 import { ByBit } from './bybit';
 import { CostToRemake } from './remake-cost';
-
-enum UpdateableFields {
-    StartEquity = 'Start Equity',
-    EntryPrice = 'Entry Price',
-    StopPrice = 'Stop Price',
-    IdealExitPrice = 'Ideal Exit',
-    Size = 'Size',
-}
-
-enum Direction {
-    short = 'short',
-    long = 'long'
-}
+import {Trade, Direction, AppState, getState, TradeInputs, UpdateableFields, saveState, clearState} from './state';
 
 function dec2(input: number): number {
     return Math.round(input * 100) / 100;
@@ -85,57 +73,6 @@ function getStats(trade: Trade) {
 // 7. mark as in-progess and completed
 // 8. mango liquidation
 
-const localstoragekey = "leverage-calculator";
-type TradeInputs = {[f in UpdateableFields]: string};
-const initFields: TradeInputs = Object.fromEntries(Object.values(UpdateableFields).map(f => [f, ""])) as TradeInputs
-const defaultName = "My Trades";
-const defaultPortfolio = "My Portfolio";
-const defaultTimeZone = 'America/Los_Angeles';
-const initState: AppState = {stagingGround: [], active: {[defaultPortfolio]: []}, name: defaultName, timezone: defaultTimeZone, selectedPortfolio: defaultPortfolio};
-
-type AppState = {
-    stagingGround: Trade[];
-    active: Record<string, Trade[]>;
-    name: string;
-    timezone: string;
-    selectedPortfolio: string;
-}
-
-type Trade = {
-    [UpdateableFields.StartEquity]: number;
-    [UpdateableFields.EntryPrice]: number;
-    [UpdateableFields.StopPrice]: number;
-    [UpdateableFields.IdealExitPrice]: number;
-    [UpdateableFields.Size]: number;
-    started?: number;
-    finished?: {
-        at: number;
-        stopped: boolean;
-    };
-    locked: boolean;
-}
-
-type OldTrade = Omit<Trade, 'locked'>;
-type PriorAppState = {
-    stagingGround: OldTrade[];
-    active: OldTrade[];
-    name: string;
-    timezone: string;
-}
-
-type OldAppState = PriorAppState;
-type NewAppState = AppState;
-function migrate(old: OldAppState): NewAppState {
-    const newStaging: Trade[] = old.stagingGround.map(ot => ({...ot, locked: false}));
-    const newActive: Trade[] = old.active.map(ot => ({...ot, locked: false}));
-    return {
-        ...old,
-        selectedPortfolio: defaultPortfolio,
-        active: {[defaultPortfolio]: newActive},
-        stagingGround: newStaging
-    };
-}
-
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 const noop = () => {};
 
@@ -150,21 +87,22 @@ function addToWindow<A extends string, B>(obj: Record<A, B>) {
     Object.entries(obj).forEach(([a, b]) => { (window as unknown as Record<string, unknown>)[a] = b })
 }
 
+const initFields: TradeInputs = Object.fromEntries(Object.values(UpdateableFields).map(f => [f, ""])) as TradeInputs
+const initState = getState();
+
+
+
 export const LeverageCalculator: React.FC = () => {
-    const [trades, setTrades] = useState<AppState>(JSON.parse(window.localStorage.getItem(localstoragekey) ?? JSON.stringify(initState)));
+    const [trades, setTrades] = useState<AppState>(initState);
     const [inputs, setInputs] = useState<TradeInputs>(initFields);
     const [editing, setEditing] = useState<number>(-1);
     const [editingActive, setEditingActive] = useState(false);
     const [statsForPastTradesWindow, setStatsForPastTradesWindow] = useState(-1);
-    const [name, setName] = useState(defaultName);
-    const [timezone, setTimeZone] = useState<ITimezoneOption>(tzNameToOption(defaultTimeZone));
+    const [name, setName] = useState(initState.name);
+    const [timezone, setTimeZone] = useState<ITimezoneOption>(tzNameToOption(initState.timezone));
     const [newPortfolioName, setNewPortfolioName] = useState("");
     const [changingPortfolioName, setChangingPortfolioName] = useState(false);
     const [creatingNewPortfolio, setCreatingNewPortfolio] = useState(false);
-
-    const [calculatingForTop, setCalculatingForTop] = useState(false);
-    const [theoreticalReversal, setTheoresticalReversal] = useState("");
-    const [ladderEquity, setLadderEquity] = useState("");
 
     useEffect(() => {
         window.document.title = `Leverage | ${trades.name}`;
@@ -179,14 +117,10 @@ export const LeverageCalculator: React.FC = () => {
         setInputs(initFields);
     }
     function reset() {
-        saveTrades(initState);
+        clearState();
+        setTrades(getState());
     }
     addToWindow({reset});
-    function migrateNow() {
-        const old = JSON.parse(window.localStorage.getItem(localstoragekey) ?? "");
-        saveTrades(migrate(old));
-    }
-    addToWindow({migrateNow});
     function upload() {
         const input = document.createElement("input");
         input.type = 'file';
@@ -204,7 +138,7 @@ export const LeverageCalculator: React.FC = () => {
     }
     addToWindow({upload});
     function download() {
-        const current = JSON.parse(window.localStorage.getItem(localstoragekey) ?? "");
+        const current = getState();
         const link = document.createElement("a");
         const now = new Date();
         const dateDisplay = now.toLocaleString('en-us', {timeZone: trades.timezone, timeZoneName: 'short'}).split(", ").join("_").split(":").join("-").split(" ").join("_").split("/").join("-");
@@ -218,7 +152,7 @@ export const LeverageCalculator: React.FC = () => {
     addToWindow({download});
     function saveTrades(newState: AppState) {
         setTrades(newState);
-        window.localStorage.setItem(localstoragekey, JSON.stringify(newState));
+        saveState(newState);
     }
     function inputsToTrade(): Trade {
         return {...Object.fromEntries(Object.entries(inputs).map(([field, value]) => [field, parseFloat(value)])) as {[f in UpdateableFields]: number}, locked: false};
@@ -429,7 +363,7 @@ export const LeverageCalculator: React.FC = () => {
                             </select>
                         </td>*/}
                         <td colSpan={11}>
-                            <CostToRemake />
+                            <CostToRemake remake={trades.remakeParams} set={remakeParams => { saveTrades({...trades, remakeParams}); }} />
                             {/*theoreticalReversal.length > 0 && <Ladders isBottom={!calculatingForTop} price={parseFloat(theoreticalReversal)} equity={parseFloat(ladderEquity)} />*/} 
                         </td>
                     </tr>
@@ -441,8 +375,6 @@ export const LeverageCalculator: React.FC = () => {
                     <tr>
                         <td>
                             <input type="button" value="Clear Trades" onClick={() => { reset(); }} />
-                            <br />
-                            <input type="button" value="Migrate" onClick={() => { migrateNow(); }} />
                             <br />
                             <input type="button" value="Download" onClick={() => { download(); }} />
                             <br />
