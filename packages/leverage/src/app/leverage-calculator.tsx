@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import TimezoneSelect, { ITimezoneOption } from 'react-timezone-select';
 import { ByBit } from './bybit';
+import { PrivKey } from './priv-key';
 import { CostToRemake } from './remake-cost';
 import {Trade, Direction, AppState, getState, TradeInputs, UpdateableFields, saveState, clearState} from './state';
+import {upload as uploadFile} from './upload';
 
 function dec2(input: number): number {
     return Math.round(input * 100) / 100;
@@ -90,8 +92,6 @@ function addToWindow<A extends string, B>(obj: Record<A, B>) {
 const initFields: TradeInputs = Object.fromEntries(Object.values(UpdateableFields).map(f => [f, ""])) as TradeInputs
 const initState = getState();
 
-
-
 export const LeverageCalculator: React.FC = () => {
     const [trades, setTrades] = useState<AppState>(initState);
     const [inputs, setInputs] = useState<TradeInputs>(initFields);
@@ -121,20 +121,8 @@ export const LeverageCalculator: React.FC = () => {
         setTrades(getState());
     }
     addToWindow({reset});
-    function upload() {
-        const input = document.createElement("input");
-        input.type = 'file';
-        input.onchange = () => {
-            const reader = new FileReader();
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            reader.readAsText(input.files![0]);
-            reader.onload = (e) => {
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                saveTrades(JSON.parse(e.target!.result as string));
-                input.remove();
-            }
-        }
-        input.click();
+    async function upload() {
+        saveTrades(JSON.parse(await uploadFile()));
     }
     addToWindow({upload});
     function download() {
@@ -320,6 +308,7 @@ export const LeverageCalculator: React.FC = () => {
     const realTradesSummaryCSS: React.CSSProperties = overallStats.totalPercentChange !== 0 ? {backgroundColor: overallStats.netChangeByEquity < 0 ? 'lightsalmon' : 'lightgreen'} : {};
     return (
         <div>
+            <PrivKey />
             <ByBit />
             <table>
                 <tbody>
